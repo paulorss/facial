@@ -600,7 +600,7 @@ def render_login_page():
     # Verifica se existe usuário admin, senão cria
     ensure_admin_user_exists()
     
-    col1, col2 = st.columns(2)
+    col1, = st.columns(1)
     
     with col1:
         st.subheader("Login")
@@ -619,9 +619,7 @@ def render_login_page():
             else:
                 st.error("Usuário ou senha incorretos.")
     
-    with col2:
-        st.image("https://via.placeholder.com/400x300?text=Sistema+de+Entrega", use_column_width=True)
-        st.write("Sistema de confirmação de recebimento com assinatura blockchain e autenticação segura.")
+    
         
         # Exibe informações sobre o usuário admin padrão
         users_file = "data/users/users.json"
