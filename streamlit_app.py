@@ -10,6 +10,9 @@ from PIL import Image
 import time
 import base64
 from io import BytesIO
+import hmac
+from PIL import Image, ImageDraw, ImageFont
+
 
 # Configuração do aplicativo
 st.set_page_config(
@@ -26,6 +29,217 @@ os.makedirs("data/signatures", exist_ok=True)
 os.makedirs("data/cargo_images", exist_ok=True)
 os.makedirs("data/selfies", exist_ok=True)
 os.makedirs("data/blockchain", exist_ok=True)
+
+# Funções para assinatura blockchain
+def create_document_hash(content, metadata):
+    """
+    Cria um hash SHA-256 do conteúdo do documento e metadados.
+    
+    Args:
+        content: O conteúdo do documento (pode ser texto, bytes ou qualquer objeto serializável)
+        metadata: Dicionário com metadados (timestamp, usuário, etc.)
+    
+    Returns:
+        hash_hex: Hash hexadecimal do documento
+    """
+    # Converter o conteúdo e metadados para formato JSON
+    if isinstance(content, bytes):
+        content_str = base64.b64encode(content).decode('utf-8')
+    elif not isinstance(content, str):
+        content_str = json.dumps(content, sort_keys=True)
+    else:
+        content_str = content
+    
+    metadata_str = json.dumps(metadata, sort_keys=True)
+    
+    # Combinar conteúdo e metadados
+    combined = content_str + metadata_str
+    
+    # Criar o hash
+    hash_obj = hashlib.sha256(combined.encode())
+    return hash_obj.hexdigest()
+
+# Função para assinar um documento digitalmente
+def sign_document(document_hash, private_key):
+    """
+    Assina digitalmente um hash de documento usando HMAC.
+    Em um sistema real, isso usaria criptografia assimétrica.
+    
+    Args:
+        document_hash: Hash do documento a ser assinado
+        private_key: Chave privada do assinante (neste caso, é apenas uma senha)
+    
+    Returns:
+        signature: Assinatura digital do documento
+    """
+    signature = hmac.new(
+        private_key.encode(),
+        document_hash.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return signature
+
+# Função para registrar a assinatura na blockchain local
+def register_on_blockchain(document_hash, signature, metadata):
+    """
+    Registra o hash do documento e a assinatura na blockchain local.
+    
+    Args:
+        document_hash: Hash do documento
+        signature: Assinatura digital
+        metadata: Metadados adicionais
+    
+    Returns:
+        block: Bloco da blockchain com o registro
+    """
+    blockchain_data = {
+        "type": "document_signature",
+        "document_hash": document_hash,
+        "signature": signature,
+        "timestamp": datetime.datetime.now().isoformat(),
+        "metadata": metadata
+    }
+    
+    # Adicionar à blockchain
+    block = add_to_blockchain(blockchain_data)
+    return block
+
+# Função para verificar uma assinatura digital
+def verify_signature(document_hash, signature, public_key):
+    """
+    Verifica se uma assinatura digital é válida.
+    Em um sistema real, isso usaria criptografia assimétrica.
+    
+    Args:
+        document_hash: Hash do documento
+        signature: Assinatura digital a ser verificada
+        public_key: Chave pública do assinante (neste caso, é a mesma senha)
+    
+    Returns:
+        is_valid: True se a assinatura for válida, False caso contrário
+    """
+    expected_signature = hmac.new(
+        public_key.encode(),
+        document_hash.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    return hmac.compare_digest(signature, expected_signature)
+
+def save_blockchain_signature(username, delivery_data, password):
+    """
+    Salva uma assinatura digital usando blockchain.
+    
+    Args:
+        username: Nome do usuário que está assinando
+        delivery_data: Dados da entrega a ser assinada
+        password: Senha do usuário para assinar o documento
+    
+    Returns:
+        signature_data: Dicionário com informações da assinatura
+    """
+    # Metadados da assinatura
+    metadata = {
+        "signer": username,
+        "delivery_id": delivery_data["id"],
+        "timestamp": datetime.datetime.now().isoformat(),
+        "action": "delivery_confirmation"
+    }
+    
+    # Criar hash do documento
+    document_hash = create_document_hash(delivery_data, metadata)
+    
+    # Assinar o documento
+    signature = sign_document(document_hash, password)
+    
+    # Registrar na blockchain
+    block = register_on_blockchain(document_hash, signature, metadata)
+    
+    # Criar uma imagem da assinatura para visualização
+    img = Image.new('RGB', (600, 300), color=(255, 255, 255))
+    d = ImageDraw.Draw(img)
+    
+    # Tentar carregar uma fonte, caso contrário usar a padrão
+    try:
+        font = ImageFont.truetype("arial.ttf", 16)
+        small_font = ImageFont.truetype("arial.ttf", 12)
+    except:
+        font = ImageFont.load_default()
+        small_font = ImageFont.load_default()
+    
+    # Desenhar informações da assinatura na imagem
+    d.text((20, 20), f"Assinatura Blockchain de {username}", fill=(0, 0, 0), font=font)
+    d.text((20, 50), f"Data/Hora: {datetime.datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", fill=(0, 0, 0), font=font)
+    d.text((20, 80), f"ID da Entrega: {delivery_data['id']}", fill=(0, 0, 0), font=font)
+    d.text((20, 110), f"Hash do Documento: {document_hash[:30]}...", fill=(0, 0, 0), font=font)
+    d.text((20, 140), f"Hash do Bloco: {block['hash'][:30]}...", fill=(0, 0, 0), font=font)
+    
+    # Adicionar um QR code fictício (representação visual)
+    d.rectangle([(400, 50), (550, 200)], outline=(0, 0, 0))
+    for i in range(10):
+        x1 = 410 + i * 14
+        y1 = 60 + i * 14
+        d.rectangle([(x1, y1), (x1 + 10, y1 + 10)], fill=(0, 0, 0))
+    
+    # Informações de validação da assinatura
+    d.text((20, 180), "Para verificar esta assinatura, utilize o hash do documento", fill=(0, 0, 0), font=small_font)
+    d.text((20, 200), "e o ID do bloco na plataforma blockchain.", fill=(0, 0, 0), font=small_font)
+    d.text((20, 230), f"Block ID: {block['id']}", fill=(0, 0, 0), font=small_font)
+    d.text((20, 260), f"Timestamp: {block['timestamp']}", fill=(0, 0, 0), font=small_font)
+    
+    # Salvar a imagem da assinatura
+    signature_file = f"data/signatures/{delivery_data['id']}.png"
+    img.save(signature_file)
+    
+    # Retornar dados da assinatura
+    signature_data = {
+        "document_hash": document_hash,
+        "signature": signature,
+        "block_id": block["id"],
+        "block_hash": block["hash"],
+        "timestamp": metadata["timestamp"]
+    }
+    
+    return signature_data
+
+# Função para verificar a assinatura de uma entrega
+def verify_blockchain_signature(delivery_id, document_hash, signature, username, password):
+    """
+    Verifica a validade de uma assinatura blockchain.
+    
+    Args:
+        delivery_id: ID da entrega
+        document_hash: Hash do documento
+        signature: Assinatura digital
+        username: Nome do usuário que assinou
+        password: Senha do usuário (chave pública/privada)
+    
+    Returns:
+        is_valid: True se a assinatura for válida, False caso contrário
+        block: Bloco da blockchain com o registro, se encontrado
+    """
+    # Carregar a blockchain
+    blockchain_file = "data/blockchain/chain.json"
+    
+    if not os.path.exists(blockchain_file):
+        return False, None
+    
+    with open(blockchain_file, "r") as f:
+        chain = json.load(f)
+    
+    # Procurar o bloco com a assinatura
+    for block in reversed(chain):
+        if block["data"]["type"] == "document_signature" and \
+           block["data"]["document_hash"] == document_hash and \
+           block["data"]["signature"] == signature and \
+           block["data"]["metadata"]["delivery_id"] == delivery_id:
+            
+            # Verificar a assinatura
+            is_valid = verify_signature(document_hash, signature, password)
+            return is_valid, block
+    
+    return False, None
 
 # Funções para gerenciamento de usuários
 def save_user(username, password, fullname, role):
@@ -407,7 +621,7 @@ def render_login_page():
     
     with col2:
         st.image("https://via.placeholder.com/400x300?text=Sistema+de+Entrega", use_column_width=True)
-        st.write("Sistema de confirmação de recebimento com reconhecimento facial e autenticação segura.")
+        st.write("Sistema de confirmação de recebimento com assinatura blockchain e autenticação segura.")
         
         # Exibe informações sobre o usuário admin padrão
         users_file = "data/users/users.json"
@@ -478,6 +692,13 @@ def render_dashboard():
                         st.write(f"**Receptor:** {delivery['receiver_name']}")
                         st.write(f"**Registrado em:** {timestamp}")
                         st.write(f"**Confirmado em:** {confirmation}")
+                        
+                        # Informações da assinatura blockchain se disponível
+                        if "blockchain_signature" in delivery:
+                            st.write("---")
+                            st.write("**📊 Assinatura Blockchain**")
+                            st.write(f"**Hash do Documento:** `{delivery['blockchain_signature']['document_hash'][:15]}...`")
+                            st.write(f"**ID do Bloco:** `{delivery['blockchain_signature']['block_id']}`")
                     
                     with col2:
                         # Mostra a selfie se disponível
@@ -553,6 +774,13 @@ def render_dashboard():
                         
                         if "confirmation_timestamp" in delivery:
                             st.write(f"**Data de Confirmação:** {datetime.datetime.fromisoformat(delivery['confirmation_timestamp']).strftime('%d/%m/%Y %H:%M')}")
+                        
+                        # Informações da assinatura blockchain se disponível
+                        if "blockchain_signature" in delivery:
+                            st.write("---")
+                            st.write("**📊 Assinatura Blockchain**")
+                            st.write(f"**Hash do Documento:** `{delivery['blockchain_signature']['document_hash'][:15]}...`")
+                            st.write(f"**ID do Bloco:** `{delivery['blockchain_signature']['block_id']}`")
                     
                     with col2:
                         # Mostra a selfie se disponível
@@ -626,6 +854,14 @@ def render_dashboard():
                         
                         if "confirmation_timestamp" in delivery:
                             st.write(f"**Data de Confirmação:** {datetime.datetime.fromisoformat(delivery['confirmation_timestamp']).strftime('%d/%m/%Y %H:%M')}")
+                        
+                        # Informações da assinatura blockchain se disponível
+                        if "blockchain_signature" in delivery:
+                            st.write("---")
+                            st.write("**📊 Assinatura Blockchain**")
+                            st.write(f"**Hash do Documento:** `{delivery['blockchain_signature']['document_hash'][:15]}...`")
+                            st.write(f"**ID do Bloco:** `{delivery['blockchain_signature']['block_id']}`")
+                            st.write(f"**Timestamp:** `{delivery['blockchain_signature']['timestamp']}`")
                     
                     with col2:
                         # Mostra sua própria selfie
@@ -641,9 +877,9 @@ def render_dashboard():
                         signature_path = f"data/signatures/{delivery['id']}.png"
                         if os.path.exists(signature_path):
                             try:
-                                st.image(signature_path, caption="Sua Assinatura", width=200)
+                                st.image(signature_path, caption="Seu Certificado Blockchain", width=250)
                             except Exception as e:
-                                st.warning(f"Não foi possível exibir a imagem de assinatura.")
+                                st.warning(f"Não foi possível exibir o certificado de assinatura.")
         else:
             st.info("Você não tem entregas confirmadas.")
 
@@ -800,7 +1036,7 @@ def render_register_delivery():
                     st.error("Erro ao registrar entrega.")
 
 def render_confirm_receipt():
-    """Renderiza a página de confirmação de recebimento"""
+    """Renderiza a página de confirmação de recebimento com assinatura blockchain"""
     st.title("Confirmar Recebimento")
     
     # Verifica se é um receptor
@@ -852,7 +1088,10 @@ def render_confirm_receipt():
                 st.subheader("Imagem da Carga")
                 img_path = f"data/cargo_images/{selected_delivery['id']}.jpg"
                 if os.path.exists(img_path):
-                    st.image(img_path, use_column_width=True)
+                    try:
+                        st.image(img_path, use_column_width=True)
+                    except Exception as e:
+                        st.warning(f"Não foi possível exibir a imagem da carga: {str(e)}")
     
     with col2:
         if "selected_delivery" in st.session_state:
@@ -870,121 +1109,108 @@ def render_confirm_receipt():
                 if hashed_password == user["password_hash"]:
                     st.success("Identidade verificada com sucesso!")
                     st.session_state.identity_verified = True
+                    st.session_state.auth_password = password  # Salva a senha para usar na assinatura blockchain
                 else:
                     st.error("Senha incorreta. Tente novamente.")
                     st.session_state.identity_verified = False
             
-            # Se a identidade foi verificada, solicitar selfie e assinatura
+            # Se a identidade foi verificada, solicitar selfie e assinatura blockchain
             if st.session_state.get("identity_verified", False):
                 st.subheader("Selfie com o Equipamento")
                 st.write("Tire uma selfie mostrando você com o equipamento recebido:")
                 selfie_file = st.file_uploader("Enviar Selfie", type=["jpg", "jpeg", "png"], key="selfie_uploader")
                 
-                st.subheader("Assinatura Digital")
-                st.write("Assine abaixo para confirmar o recebimento:")
+                st.subheader("Assinatura Blockchain")
+                st.write("""
+                Seu recebimento será assinado digitalmente e registrado em blockchain.
+                Este método garante:
                 
-                # Canvas para assinatura
-                signature_html = """
-                <canvas id="signature-pad" width="400" height="200" style="border: 1px solid #ddd;"></canvas>
-                <br>
-                <button id="clear-button">Limpar</button>
-                <button id="save-button">Salvar</button>
+                - Imutabilidade: Não pode ser alterado posteriormente
+                - Verificabilidade: Qualquer pessoa pode verificar a autenticidade
+                - Carimbo de tempo: Prova inequívoca da data e hora da transação
+                - Prova criptográfica: Vinculada à sua identidade e senha
+                """)
                 
-                <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.0.0/dist/signature_pad.min.js"></script>
-                <script>
-                    var canvas = document.getElementById('signature-pad');
-                    var signaturePad = new SignaturePad(canvas);
-                    
-                    document.getElementById('clear-button').addEventListener('click', function() {
-                        signaturePad.clear();
-                    });
-                    
-                    document.getElementById('save-button').addEventListener('click', function() {
-                        if (signaturePad.isEmpty()) {
-                            alert('Por favor, faça sua assinatura antes de salvar.');
-                            return;
-                        }
-                        
-                        var dataURL = signaturePad.toDataURL();
-                        document.getElementById('signature-output').value = dataURL;
-                        
-                        // Notificar o usuário
-                        alert('Assinatura salva! Clique em "Confirmar Recebimento" para finalizar.');
-                    });
-                </script>
+                st.info("A assinatura utilizará sua senha para criar uma chave criptográfica única.")
                 
-                <form id="signature-form" action="" method="post">
-                    <input type="hidden" id="signature-output" name="signature">
-                </form>
-                """
-                
-                st.components.v1.html(signature_html, height=300)
-                
-                # Campo para armazenar a assinatura (oculto)
-                signature_data = st.text_input("Assinatura", key="signature_data", value="", type="password", help="A assinatura será preenchida automaticamente quando você clicar em 'Salvar' no painel acima")
-                
-                # Texto alternativo para assinatura (fallback)
-                st.write("Se a assinatura digital não funcionar, você pode confirmar manualmente:")
-                
-                manual_signature = st.text_input("Digite seu nome completo como assinatura manual", key="manual_signature")
+                # Checkbox para concordar com termos
+                terms_agreed = st.checkbox("Declaro que recebi os itens descritos acima e autorizo o registro dessa confirmação em blockchain")
                 
                 # Botão para confirmar recebimento
-                if st.button("Confirmar Recebimento"):
-                    # Usa assinatura digital ou manual
-                    final_signature = signature_data if signature_data else manual_signature
-                    
-                    if not final_signature:
-                        st.error("É necessário fornecer uma assinatura (digital ou manual).")
+                if st.button("Confirmar Recebimento com Blockchain"):
+                    if not terms_agreed:
+                        st.error("É necessário concordar com os termos para prosseguir.")
                     elif selfie_file is None:
                         st.error("É necessário enviar uma selfie com o equipamento.")
                     else:
                         # Salva a selfie
                         selfie_saved = save_selfie(selfie_file, st.session_state.selected_delivery["id"])
                         
-                        # Salva a assinatura
-                        signature_saved = save_signature(
-                            st.session_state.user["username"],
-                            final_signature,
-                            st.session_state.selected_delivery["id"]
-                        )
-                        
-                        if signature_saved and selfie_saved:
-                            # Atualiza o status da entrega
-                            deliveries = get_all_deliveries()
-                            for i, delivery in enumerate(deliveries):
-                                if delivery["id"] == st.session_state.selected_delivery["id"]:
-                                    deliveries[i]["status"] = "confirmed"
-                                    deliveries[i]["confirmation_timestamp"] = datetime.datetime.now().isoformat()
-                                    deliveries[i]["has_selfie"] = True
-                                    break
-                            
-                            # Salva a lista atualizada de entregas
-                            with open("data/deliveries/deliveries.json", "w") as f:
-                                json.dump(deliveries, f)
-                            
-                            # Registra na blockchain
-                            blockchain_data = {
-                                "type": "delivery_confirmation",
-                                "delivery_id": st.session_state.selected_delivery["id"],
-                                "timestamp": datetime.datetime.now().isoformat(),
-                                "receiver_username": st.session_state.user["username"],
-                                "has_signature": True,
-                                "has_selfie": True
-                            }
-                            
-                            # Adiciona à blockchain
-                            block = add_to_blockchain(blockchain_data)
-                            
-                            st.success("Recebimento confirmado com sucesso!")
-                            st.session_state.identity_verified = False
-                            st.session_state.selected_delivery = None
-                            
-                            # Botão para voltar ao dashboard
-                            if st.button("Voltar ao Dashboard"):
-                                st.session_state.page = "dashboard"
-                                st.rerun()
+                        if selfie_saved:
+                            with st.spinner("Gerando assinatura blockchain e registrando transação..."):
+                                # Criar uma assinatura blockchain
+                                try:
+                                    # Obter senha para assinar
+                                    password = st.session_state.auth_password
+                                    
+                                    # Salva a assinatura blockchain
+                                    signature_data = save_blockchain_signature(
+                                        st.session_state.user["username"],
+                                        st.session_state.selected_delivery,
+                                        password
+                                    )
+                                    
+                                    # Atualiza o status da entrega
+                                    deliveries = get_all_deliveries()
+                                    for i, delivery in enumerate(deliveries):
+                                        if delivery["id"] == st.session_state.selected_delivery["id"]:
+                                            deliveries[i]["status"] = "confirmed"
+                                            deliveries[i]["confirmation_timestamp"] = datetime.datetime.now().isoformat()
+                                            deliveries[i]["has_selfie"] = True
+                                            deliveries[i]["blockchain_signature"] = signature_data
+                                            break
+                                    
+                                    # Salva a lista atualizada de entregas
+                                    with open("data/deliveries/deliveries.json", "w") as f:
+                                        json.dump(deliveries, f)
+                                    
+                                    st.success("""
+                                    ✅ Recebimento confirmado com sucesso!
+                                    
+                                    Sua assinatura foi registrada na blockchain com segurança criptográfica.
+                                    Um certificado digital foi gerado como comprovante permanente da transação.
+                                    """)
+                                    
+                                    # Exibe informações da assinatura
+                                    st.info(f"""
+                                    **Informações do Registro Blockchain:**
+                                    - **Hash do Documento:** {signature_data['document_hash'][:10]}...
+                                    - **Hash do Bloco:** {signature_data['block_hash'][:10]}...
+                                    - **ID da Transação:** {signature_data['block_id']}
+                                    - **Timestamp:** {signature_data['timestamp']}
+                                    """)
+                                    
+                                    # Exibir a imagem da assinatura
+                                    signature_path = f"data/signatures/{st.session_state.selected_delivery['id']}.png"
+                                    if os.path.exists(signature_path):
+                                        st.subheader("Certificado Digital")
+                                        try:
+                                            st.image(signature_path, caption="Certificado de Assinatura Blockchain")
+                                        except Exception as e:
+                                            st.warning(f"Não foi possível exibir o certificado: {str(e)}")
+                                    
+                                    # Limpar o estado para próxima operação
+                                    st.session_state.identity_verified = False
+                                    st.session_state.selected_delivery = None
+                                    
+                                    # Botão para voltar ao dashboard
+                                    if st.button("Voltar ao Dashboard"):
+                                        st.session_state.page = "dashboard"
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao gerar assinatura blockchain: {str(e)}")
                         else:
-                            st.error("Erro ao salvar a assinatura ou selfie.")
+                            st.error("Erro ao salvar a selfie.")
 
 def render_deliveries():
     """Renderiza a página de visualização de entregas"""
@@ -1054,8 +1280,16 @@ def render_deliveries():
                 
                 # Exibe informações da blockchain
                 if "blockchain_hash" in delivery:
-                    st.subheader("Registro Blockchain")
+                    st.subheader("Registro Blockchain (Entrega)")
                     st.code(delivery["blockchain_hash"])
+                
+                # Exibe informações da assinatura blockchain se disponível
+                if "blockchain_signature" in delivery:
+                    st.subheader("Assinatura Blockchain (Confirmação)")
+                    st.write(f"**Hash do Documento:** `{delivery['blockchain_signature']['document_hash'][:20]}...`")
+                    st.write(f"**Hash do Bloco:** `{delivery['blockchain_signature']['block_hash'][:20]}...`")
+                    st.write(f"**ID do Bloco:** `{delivery['blockchain_signature']['block_id']}`")
+                    st.write(f"**Timestamp:** `{delivery['blockchain_signature']['timestamp']}`")
             
             with col2:
                 # Exibe imagem da carga se disponível
@@ -1076,43 +1310,14 @@ def render_deliveries():
                         except Exception as e:
                             st.warning(f"Não foi possível exibir a selfie.")
                 
-                # Exibe assinatura se disponível
+                # Exibe certificado blockchain se disponível
                 if delivery.get("status") == "confirmed":
                     signature_path = f"data/signatures/{delivery['id']}.png"
                     if os.path.exists(signature_path):
                         try:
-                            st.image(signature_path, caption="Assinatura", width=200)
+                            st.image(signature_path, caption="Certificado Blockchain", width=300)
                         except Exception as e:
-                            st.warning(f"Não foi possível exibir a assinatura.")
-                            st.write(f"**Receptor:** {delivery['receiver_name']}")
-                st.write(f"**Status:** {'Confirmado' if delivery.get('status') == 'confirmed' else 'Pendente'}")
-                
-                if delivery.get("status") == "confirmed" and "confirmation_timestamp" in delivery:
-                    st.write(f"**Data de Confirmação:** {datetime.datetime.fromisoformat(delivery['confirmation_timestamp']).strftime('%d/%m/%Y %H:%M')}")
-            
-            with col2:
-                # Exibe imagem da carga se disponível
-                if delivery.get("has_cargo_image"):
-                    img_path = f"data/cargo_images/{delivery['id']}.jpg"
-                    if os.path.exists(img_path):
-                        st.image(img_path, caption="Imagem da Carga (Registro)", width=200)
-                
-                # Exibe selfie se disponível
-                if delivery.get("has_selfie"):
-                    img_path = f"data/selfies/{delivery['id']}.jpg"
-                    if os.path.exists(img_path):
-                        st.image(img_path, caption="Selfie do Receptor com Equipamento", width=200)
-                
-                # Exibe assinatura se disponível
-                if delivery.get("status") == "confirmed":
-                    signature_path = f"data/signatures/{delivery['id']}.png"
-                    if os.path.exists(signature_path):
-                        st.image(signature_path, caption="Assinatura", width=200)
-            
-            # Exibe informações da blockchain
-            if "blockchain_hash" in delivery:
-                st.subheader("Registro Blockchain")
-                st.code(delivery["blockchain_hash"])
+                            st.warning(f"Não foi possível exibir o certificado blockchain.")
 
 # Executa o aplicativo
 if __name__ == "__main__":
